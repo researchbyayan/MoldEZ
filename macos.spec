@@ -6,11 +6,12 @@ project_dir = Path.cwd()
 icon_icns = project_dir / "icon.icns"
 
 a = Analysis(
-    ['macos.py'],
+    ['mkOS.py'],
     pathex=[str(project_dir)],
     binaries=[],
     datas=[
         ('banner.png', '.'),
+        ('banner-dark.png', '.'),
         ('icon.icns', '.'),
     ],
     hiddenimports=[

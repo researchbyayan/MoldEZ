@@ -257,12 +257,13 @@ class AppButton(tk.Button):
     def __init__(self, parent, text, command, bg_color="#2c3e50",
                  fg_color="white", hover_color=None,
                  font=("Segoe UI", 10, "bold"),
-                 padx=15, pady=5, state=tk.NORMAL, **kwargs):
+                 padx=15, pady=5, state=tk.NORMAL, palette_key=None, **kwargs):
         self._bg = bg_color
         self._fg = fg_color
         self._hover = hover_color or self._lighten(bg_color)
         self._disabled_bg = "#c8ced6"
         self._disabled_fg = "#6c757d"
+        self._palette_key = palette_key
 
         super().__init__(
             parent,
@@ -292,8 +293,27 @@ class AppButton(tk.Button):
             '#2c3e50': '#34495e', '#27ae60': '#2ecc71', '#f39c12': '#f1c40f',
             '#e74c3c': '#ec7063', '#3498db': '#5dade2', '#2ca24c': '#36d162',
             '#f0ad4e': '#f8c471', '#2596be': '#3ab4d9', '#842aa2': '#9b32bb',
+            '#e0e6ed': '#f5f7fa', '#4fa3e0': '#76baea', '#bb55d4': '#ca79de',
         }
         return table.get(hex_color, hex_color)
+
+    def _darken(self, hex_color):
+        table = {
+            '#e0e6ed': '#c5ced8', '#4fa3e0': '#3b92d1', '#2ecc71': '#25b864',
+            '#f8c471': '#efb04a', '#3ab4d9': '#259bc0', '#bb55d4': '#a440c0',
+            '#e74c3c': '#d44334', '#f39c12': '#db8907',
+        }
+        return table.get(hex_color, hex_color)
+
+    def _compute_fg(self, bg_color):
+        color = bg_color.lstrip('#')
+        if len(color) != 6:
+            return "white"
+        red = int(color[0:2], 16)
+        green = int(color[2:4], 16)
+        blue = int(color[4:6], 16)
+        luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
+        return "#18202d" if luminance >= 170 else "white"
 
     def _apply_state_style(self):
         is_disabled = str(self.cget("state")) == tk.DISABLED
@@ -326,6 +346,19 @@ class AppButton(tk.Button):
 
     def set_text(self, text):
         self.configure(text=text.upper())
+
+    def update_theme(self, colors):
+        if self._palette_key and self._palette_key in colors:
+            self._bg = colors[self._palette_key]
+        self._fg = self._compute_fg(self._bg)
+        if self._palette_key == 'primary' and self._bg == colors.get('primary'):
+            self._hover = self._darken(self._bg) if self._fg != "white" else self._lighten(self._bg)
+        else:
+            self._hover = self._lighten(self._bg)
+        is_dark = colors.get('background', '').lower() == DARK_COLORS['background']
+        self._disabled_bg = '#4b556b' if is_dark else '#c8ced6'
+        self._disabled_fg = '#a7b4c6' if is_dark else '#6c757d'
+        self._apply_state_style()
 
 class ToggleSwitch(tk.Canvas):
     """Animated on/off switch for the top bar."""
@@ -772,13 +805,7 @@ class MoldEZAnalyzer:
             return
         if isinstance(widget, AppButton):
             try:
-                current_bg = widget._bg
-                for old_hex, key in _BG_REMAP_ORDER:
-                    if current_bg == old_hex:
-                        widget._bg = self.colors[key]
-                        widget._hover = widget._lighten(widget._bg)
-                        break
-                widget._apply_state_style()
+                widget.update_theme(self.colors)
             except Exception:
                 pass
             return
@@ -1042,7 +1069,7 @@ class MoldEZAnalyzer:
                       state=tk.NORMAL, **kwargs):
         bg = self._COLOR_MAP.get(style, '#2c3e50')
         btn = AppButton(parent, text=text, command=command,
-                        bg_color=bg, state=state, **kwargs)
+                        bg_color=bg, state=state, palette_key=style, **kwargs)
         return btn
 
     def _configure_session_tree_style(self):
@@ -1458,7 +1485,11 @@ class MoldEZAnalyzer:
             self.banner_image_label = None
 
         if self.dark_mode.get():
-            if self.banner_fallback_label is not None:
+            if self.banner_image_label is None and self.banner_fallback_label is not None:
+                self.banner_fallback_label.configure(
+                    fg="white", bg=self.colors['background'])
+                self.banner_fallback_label.pack(pady=4, before=self.banner_subtitle_label)
+            elif self.banner_fallback_label is not None:
                 self.banner_fallback_label.pack_forget()
             self.banner_subtitle_label.configure(
                 fg="white", bg=self.colors['background'])
@@ -3944,11 +3975,31 @@ class MoldEZAnalyzer:
         if getattr(sys, 'frozen', False) and sys.platform.startswith("win"):
             os._exit(0)
 
+
+def main():
+    root = tk.Tk()
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "MoldEZ.MarkIV.2026")
+        except Exception:
+            pass
+    set_window_icon(root)
+    app = MoldEZAnalyzer(root)
+    if sys.platform == "darwin":
+        try:
+            root.createcommand(
+                "tk::mac::Quit",
+                lambda: (app.on_closing(), "break")[1])
+        except Exception:
+            pass
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    root.mainloop()
+
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Entry-point processing is performed.
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = MoldEZAnalyzer(root)
-    root.mainloop()
+    main()
 
